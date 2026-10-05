@@ -54,6 +54,50 @@ function registerDeletedId(id: string) {
 }
 
 /**
+ * Background GitHub Sync — automatically commits updated defaultPages.ts to GitHub
+ * if the repository owner has saved their Personal Access Token on their own browser!
+ * NO OTHER USER OR FRIEND EVER SEES OR NEEDS THE TOKEN!
+ */
+async function autoCommitToGitHub(pagesToCommit: WikiPage[]) {
+  const owner = localStorage.getItem('gh_owner') || 'PoggerFishWs';
+  const repo = localStorage.getItem('gh_repo') || 'NiggisWiki';
+  const token = localStorage.getItem('gh_token');
+  if (!owner || !repo || !token) return;
+
+  try {
+    const jsonContent = JSON.stringify(pagesToCommit, null, 2);
+    const tsContent = `import type { WikiPage } from '../types/wiki';\n\nexport const AI_CREDIT_AUTHOR = 'Gemini 3.6 Flash (Antigravity AI)';\n\nexport const defaultPages: WikiPage[] = ${jsonContent};\n`;
+
+    const filePath = 'src/data/defaultPages.ts';
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+
+    const getRes = await fetch(apiUrl, { headers: { Authorization: `token ${token}` } });
+    let sha = '';
+    if (getRes.ok) {
+      const getData = await getRes.json();
+      sha = getData.sha;
+    }
+
+    const base64Content = btoa(unescape(encodeURIComponent(tsContent)));
+
+    await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `Auto-sync NiggisWiki pages (${pagesToCommit.length} total pages)`,
+        content: base64Content,
+        sha: sha || undefined
+      })
+    });
+  } catch {
+    // silent background fallback
+  }
+}
+
+/**
  * Load pages with migration scanner — recovers orphaned pages from old storage keys
  * and respects deleted page IDs so deleted pages stay deleted forever!
  */
@@ -264,16 +308,16 @@ function App() {
     if (autoApprove) {
       // Admin mode: save directly
       setPages(prev => {
+        let updated: WikiPage[];
         const existingIdx = prev.findIndex(p => p.id === page.id);
         if (existingIdx >= 0) {
-          // Update existing page (edit mode)
-          const updated = [...prev];
+          updated = [...prev];
           updated[existingIdx] = { ...page, isProtected: prev[existingIdx].isProtected };
-          return updated;
         } else {
-          // New page
-          return [...prev, page];
+          updated = [...prev, page];
         }
+        autoCommitToGitHub(updated);
+        return updated;
       });
       setActivePageId(page.id);
       setIsEditing(false);
@@ -300,7 +344,11 @@ function App() {
   const handleDeletePage = useCallback((pageToDelete: WikiPage) => {
     const doDelete = () => {
       registerDeletedId(pageToDelete.id);
-      setPages(prev => prev.filter(p => p.id !== pageToDelete.id));
+      setPages(prev => {
+        const next = prev.filter(p => p.id !== pageToDelete.id);
+        autoCommitToGitHub(next);
+        return next;
+      });
       setActivePageId('Main_Page');
     };
 
@@ -318,7 +366,6 @@ function App() {
       const inputPass = prompt(`Page "${pageToDelete.title}" is password-protected by creator (${pageToDelete.editedBy}).\n\nPlease enter the creator deletion password:`);
       if (inputPass === null) return;
 
-      // Exact string match with trimming
       if (inputPass.trim() === pageToDelete.password.trim()) {
         doDelete();
         alert(`✅ Page "${pageToDelete.title}" successfully deleted!`);
@@ -345,14 +392,16 @@ function App() {
 
     // Approve: add/update the page
     setPages(prev => {
+      let updated: WikiPage[];
       const existingIdx = prev.findIndex(p => p.id === req.pageData.id);
       if (existingIdx >= 0) {
-        const updated = [...prev];
+        updated = [...prev];
         updated[existingIdx] = { ...req.pageData, isProtected: prev[existingIdx].isProtected };
-        return updated;
       } else {
-        return [...prev, req.pageData];
+        updated = [...prev, req.pageData];
       }
+      autoCommitToGitHub(updated);
+      return updated;
     });
 
     setPendingRequests(prev => prev.filter(r => r.id !== reqId));
