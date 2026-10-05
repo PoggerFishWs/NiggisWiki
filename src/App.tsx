@@ -270,11 +270,6 @@ function App() {
 
   // ──────────────── Delete Page ────────────────
   const handleDeletePage = useCallback((pageToDelete: WikiPage) => {
-    if (pageToDelete.isProtected || pageToDelete.id === 'Main_Page' || pageToDelete.id === 'Example_Article') {
-      alert('🔒 The master example page and home page are protected and undeletable!');
-      return;
-    }
-
     // 1. Admin Override Delete
     if (isEditorUnlocked) {
       if (confirm(`Admin Mode: Delete page "${pageToDelete.title}"?`)) {

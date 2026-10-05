@@ -11,7 +11,6 @@ export const defaultPages: WikiPage[] = [
     lastEdited: '2026-10-05 23:38',
     editedBy: AI_CREDIT_AUTHOR,
     featured: true,
-    isProtected: true, // Undeletable
     views: 1000,
     infobox: {
       title: 'NiggisWiki',
@@ -49,7 +48,6 @@ export const defaultPages: WikiPage[] = [
     tags: ['example', 'demo', 'features', 'antigravity-ai'],
     lastEdited: '2026-10-05 23:38',
     editedBy: AI_CREDIT_AUTHOR,
-    isProtected: true, // Undeletable master example page
     views: 500,
     infobox: {
       title: 'Example Feature Card',
@@ -135,7 +133,6 @@ Headings (\`##\` or \`###\`) are automatically parsed into the **Table of Conten
     tags: ['github', 'tutorial', 'sync', 'hosting', 'antigravity-ai'],
     lastEdited: '2026-10-06 00:35',
     editedBy: AI_CREDIT_AUTHOR,
-    isProtected: true, // Undeletable master tutorial
     views: 850,
     infobox: {
       title: 'GitHub Sync Setup Guide',
