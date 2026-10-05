@@ -16,6 +16,10 @@ const PENDING_STORAGE_KEY = 'niggiswiki_pending_v7';
 const THEME_STORAGE_KEY = 'niggiswiki_theme';
 const CUSTOM_THEME_KEY = 'niggiswiki_custom_theme';
 const EDITOR_PASS_KEY = 'niggiswiki_editor_pass';
+const DELETED_PAGES_KEY = 'niggiswiki_deleted_page_ids_v1';
+
+// Public Cloud Live Sync Endpoint — keeps all visitors synced across all devices globally
+const CLOUD_SYNC_URL = 'https://kvdb.io/NiggisWiki_Global_V1/pages';
 
 // Historical storage keys for migration recovery
 const LEGACY_KEYS = [
@@ -28,10 +32,34 @@ const LEGACY_KEYS = [
   'niggiswiki_pages_v7',
 ];
 
+function getDeletedIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_PAGES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function registerDeletedId(id: string) {
+  try {
+    const deleted = getDeletedIds();
+    if (!deleted.includes(id)) {
+      deleted.push(id);
+      localStorage.setItem(DELETED_PAGES_KEY, JSON.stringify(deleted));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 /**
  * Load pages with migration scanner — recovers orphaned pages from old storage keys
+ * and respects deleted page IDs so deleted pages stay deleted forever!
  */
 function loadPagesWithMigration(): WikiPage[] {
+  const deletedIds = getDeletedIds();
+
   // 1. Try loading from permanent key
   const stored = localStorage.getItem(PERMANENT_STORAGE_KEY);
   let currentPages: WikiPage[] = [];
@@ -53,12 +81,10 @@ function loadPagesWithMigration(): WikiPage[] {
     try {
       const legacyPages: WikiPage[] = JSON.parse(legacyData);
       for (const lp of legacyPages) {
-        // Skip default pages (they'll be in defaults)
         if (lp.id === 'Main_Page' || lp.id === 'Example_Article') continue;
-        // Skip if already in currentPages
         if (currentPages.some(cp => cp.id === lp.id)) continue;
-        // Skip if already recovered
         if (recoveredPages.some(rp => rp.id === lp.id)) continue;
+        if (deletedIds.includes(lp.id)) continue;
         recoveredPages.push(lp);
       }
     } catch {
@@ -66,10 +92,12 @@ function loadPagesWithMigration(): WikiPage[] {
     }
   }
 
-  // 3. Merge: defaults + current user pages + recovered pages
+  // 3. Filter default pages and user pages against deletedIds
+  const activeDefaults = defaultPages.filter(d => !deletedIds.includes(d.id));
   const defaultIds = defaultPages.map(d => d.id);
-  const userPages = currentPages.filter(p => !defaultIds.includes(p.id));
-  const allPages = [...defaultPages, ...userPages, ...recoveredPages];
+  const userPages = currentPages.filter(p => !defaultIds.includes(p.id) && !deletedIds.includes(p.id));
+
+  const allPages = [...activeDefaults, ...userPages, ...recoveredPages];
 
   // 4. Save the merged result to permanent key
   localStorage.setItem(PERMANENT_STORAGE_KEY, JSON.stringify(allPages));
@@ -270,11 +298,16 @@ function App() {
 
   // ──────────────── Delete Page ────────────────
   const handleDeletePage = useCallback((pageToDelete: WikiPage) => {
+    const doDelete = () => {
+      registerDeletedId(pageToDelete.id);
+      setPages(prev => prev.filter(p => p.id !== pageToDelete.id));
+      setActivePageId('Main_Page');
+    };
+
     // 1. Admin Override Delete
     if (isEditorUnlocked) {
       if (confirm(`Admin Mode: Delete page "${pageToDelete.title}"?`)) {
-        setPages(prev => prev.filter(p => p.id !== pageToDelete.id));
-        setActivePageId('Main_Page');
+        doDelete();
         alert(`✅ Page "${pageToDelete.title}" deleted!`);
       }
       return;
@@ -287,8 +320,7 @@ function App() {
 
       // Exact string match with trimming
       if (inputPass.trim() === pageToDelete.password.trim()) {
-        setPages(prev => prev.filter(p => p.id !== pageToDelete.id));
-        setActivePageId('Main_Page');
+        doDelete();
         alert(`✅ Page "${pageToDelete.title}" successfully deleted!`);
       } else {
         alert(`❌ Incorrect password! Only the creator (${pageToDelete.editedBy}) or an Admin can delete this page.\n\nHint: Log in as Admin from the header to override.`);
@@ -300,8 +332,7 @@ function App() {
     const isAiPage = pageToDelete.editedBy.includes('Gemini') || pageToDelete.editedBy.includes('Antigravity') || pageToDelete.editedBy.includes('AI');
     if (isAiPage || !pageToDelete.password) {
       if (confirm(`Delete page "${pageToDelete.title}"?`)) {
-        setPages(prev => prev.filter(p => p.id !== pageToDelete.id));
-        setActivePageId('Main_Page');
+        doDelete();
         alert(`✅ Page "${pageToDelete.title}" deleted!`);
       }
     }
